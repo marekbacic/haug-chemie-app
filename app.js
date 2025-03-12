@@ -667,6 +667,140 @@ const HaugChemieApp = () => {
     );
   };
 
+  // Kalkulator uzupełniania stężenia chemii
+  const ConcentrationCalculator = () => {
+    const [selectedProduct, setSelectedProduct] = useState('');
+    const [currentConcentration, setCurrentConcentration] = useState('');
+    const [targetConcentration, setTargetConcentration] = useState('');
+    const [bathVolume, setBathVolume] = useState('');
+    const [result, setResult] = useState(null);
+    
+    const calculateAddition = () => {
+      if (selectedProduct && currentConcentration && targetConcentration && bathVolume) {
+        const currentConcentrationValue = parseFloat(currentConcentration);
+        const targetConcentrationValue = parseFloat(targetConcentration);
+        const bathVolumeValue = parseFloat(bathVolume);
+        
+        // Obliczenia tylko jeśli stężenie docelowe jest większe od aktualnego
+        if (targetConcentrationValue <= currentConcentrationValue) {
+          setResult({
+            error: "Stężenie docelowe musi być większe od aktualnego!"
+          });
+          return;
+        }
+        
+        // Wzór: V2 = V1 * (C2 - C1) / (100 - C2)
+        // gdzie:
+        // V1 - objętość kąpieli
+        // C1 - obecne stężenie
+        // C2 - stężenie docelowe
+        // V2 - objętość chemii do dodania
+        
+        const chemicalToAdd = bathVolumeValue * (targetConcentrationValue - currentConcentrationValue) / (100 - targetConcentrationValue);
+        
+        setResult({
+          chemicalToAdd: chemicalToAdd,
+          newVolume: bathVolumeValue + chemicalToAdd
+        });
+      }
+    };
+    
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-bold mb-4">Uzupełnianie stężenia chemii</h2>
+        <p className="mb-4 text-gray-600">
+          Oblicz ilość produktu, którą należy dodać do kąpieli, aby uzyskać wymagane stężenie.
+        </p>
+        
+        <div className="grid md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Wybierz produkt</label>
+            <select
+              className="w-full p-2 border rounded"
+              value={selectedProduct}
+              onChange={(e) => setSelectedProduct(e.target.value)}
+            >
+              <option value="">Wybierz produkt</option>
+              {products.map(product => (
+                <option key={product.id} value={product.name}>{product.name}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Aktualne stężenie (%)</label>
+            <input
+              type="number"
+              className="w-full p-2 border rounded"
+              value={currentConcentration}
+              onChange={(e) => setCurrentConcentration(e.target.value)}
+              placeholder="Podaj aktualne stężenie w %"
+              min="0"
+              max="100"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Wymagane stężenie (%)</label>
+            <input
+              type="number"
+              className="w-full p-2 border rounded"
+              value={targetConcentration}
+              onChange={(e) => setTargetConcentration(e.target.value)}
+              placeholder="Podaj wymagane stężenie w %"
+              min="0"
+              max="100"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pojemność wanny (litry)</label>
+            <input
+              type="number"
+              className="w-full p-2 border rounded"
+              value={bathVolume}
+              onChange={(e) => setBathVolume(e.target.value)}
+              placeholder="Podaj pojemność wanny w litrach"
+              min="0"
+            />
+          </div>
+          
+          <div className="md:col-span-2 flex items-end">
+            <button
+              className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded w-full"
+              onClick={calculateAddition}
+            >
+              Oblicz
+            </button>
+          </div>
+        </div>
+        
+        {result && !result.error && (
+          <div className="mt-6 p-4 bg-gray-50 rounded-md">
+            <h3 className="text-lg font-medium mb-2">Wyniki</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white p-3 rounded shadow">
+                <p className="text-sm text-gray-500">Ilość produktu do dodania</p>
+                <p className="text-xl font-bold">{result.chemicalToAdd.toFixed(2)} L</p>
+              </div>
+              <div className="bg-white p-3 rounded shadow">
+                <p className="text-sm text-gray-500">Nowa objętość kąpieli</p>
+                <p className="text-xl font-bold">{result.newVolume.toFixed(2)} L</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {result && result.error && (
+          <div className="mt-6 p-4 bg-red-50 rounded-md">
+            <h3 className="text-lg font-medium mb-2 text-red-700">Błąd</h3>
+            <p className="text-red-700">{result.error}</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Selektor chłodziw
   const CoolantSelector = () => {
     const [waterHardness, setWaterHardness] = useState('');
@@ -776,7 +910,7 @@ const HaugChemieApp = () => {
       return ratings[rating] || '-';
     };
     
-return (
+    return (
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-2xl font-bold mb-4">Dopasuj chłodziwo</h2>
         
@@ -977,7 +1111,7 @@ return (
       {/* Navigation tabs */}
       <div className="container mx-auto px-4 py-6">
         <div className="flex flex-wrap -mx-2 mb-6">
-          <div className="px-2 w-full md:w-1/3 mb-4 md:mb-0">
+          <div className="px-2 w-full md:w-1/4 mb-4 md:mb-0">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'chemicalConsumption' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('chemicalConsumption')}
@@ -985,7 +1119,7 @@ return (
               Kalkulator zużycia chemii
             </button>
           </div>
-          <div className="px-2 w-full md:w-1/3 mb-4 md:mb-0">
+          <div className="px-2 w-full md:w-1/4 mb-4 md:mb-0">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'volumeCalculator' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('volumeCalculator')}
@@ -993,7 +1127,15 @@ return (
               Kalkulator objętości
             </button>
           </div>
-          <div className="px-2 w-full md:w-1/3">
+          <div className="px-2 w-full md:w-1/4 mb-4 md:mb-0">
+            <button
+              className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'concentrationCalculator' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
+              onClick={() => setActiveTab('concentrationCalculator')}
+            >
+              Uzupełnianie stężenia
+            </button>
+          </div>
+          <div className="px-2 w-full md:w-1/4">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'chlodziwaSelektor' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('chlodziwaSelektor')}
@@ -1007,6 +1149,7 @@ return (
         <div className="bg-white rounded-lg shadow-md p-4">
           {activeTab === 'chemicalConsumption' && <ChemicalConsumptionCalculator />}
           {activeTab === 'volumeCalculator' && <VolumeCalculator />}
+          {activeTab === 'concentrationCalculator' && <ConcentrationCalculator />}
           {activeTab === 'chlodziwaSelektor' && <CoolantSelector />}
           {activeTab === 'admin' && <ProductManagement />}
         </div>
@@ -1018,18 +1161,5 @@ return (
   );
 };
 
-// Dodaj obsługę błędów przy renderowaniu
-try {
-  console.log("Próba renderowania aplikacji...");
-  ReactDOM.render(<HaugChemieApp />, document.getElementById('root'));
-  console.log("Aplikacja wyrenderowana pomyślnie!");
-} catch (error) {
-  console.error("Błąd podczas renderowania aplikacji:", error);
-  document.getElementById('root').innerHTML = `
-    <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 5px; margin: 20px;">
-      <h2>Wystąpił błąd podczas ładowania aplikacji</h2>
-      <p>${error.message}</p>
-      <p>Sprawdź konsolę przeglądarki, aby uzyskać więcej informacji.</p>
-    </div>
-  `;
-}
+// Renderuj aplikację w kontenerze root
+ReactDOM.render(<HaugChemieApp />, document.getElementById('root'));
