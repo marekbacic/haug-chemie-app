@@ -1,4 +1,4 @@
-// Używamy React Hooks
+c// Używamy React Hooks
 const { useState, useEffect } = React;
 
 // Główny komponent aplikacji
@@ -1491,10 +1491,6 @@ const fetchProducts = async () => {
     // Pobierz raporty dla wybranego klienta
     const fetchReports = async (clientId) => {
       try {
-        const snapshot = await reportsCollection
-          .where("clientId", "==", clientId)
-          .orderBy("date", "desc")
-          .get
         const snapshot = await reportsCollection
           .where("clientId", "==", clientId)
           .orderBy("date", "desc")
