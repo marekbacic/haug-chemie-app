@@ -31,37 +31,26 @@ const HaugChemieApp = () => {
   }, []);
   
   // Pobierz produkty z Firebase
-const fetchReports = async (clientId) => {
+const fetchProducts = async () => {
   try {
-    // Usuń lub zakomentuj niepotrzebny blok
-    // const snapshot = await reportsCollection
-    //   .orderBy("date", "desc")
-    //   .get
-
-    const snapshot = await reportsCollection
-      .where("clientId", "==", clientId)
-      .orderBy("date", "desc")
-      .get();
-    
-    const reportsData = snapshot.docs.map(doc => ({
+    const snapshot = await productsCollection.get();
+    const data = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    setReports(reportsData);
+    setProducts(data);
   } catch (error) {
-    console.error("Błąd podczas pobierania raportów:", error);
+    console.error("Błąd podczas pobierania danych:", error);
+    // Jeśli nie można pobrać danych, użyj domyślnych
+    setProducts([
+      { id: "1", name: "eska®clean 1001", consumption: 180 },
+      { id: "2", name: "eska®clean 2250", consumption: 150 },
+      { id: "3", name: "eska®strip H 365A", consumption: 220 },
+      { id: "4", name: "eska®phos 2023", consumption: 160 },
+      { id: "5", name: "eska®phos 3045", consumption: 190 },
+    ]);
   }
 };
-      // Jeśli nie można pobrać danych, użyj domyślnych
-      setProducts([
-        { id: "1", name: "eska®clean 1001", consumption: 180 },
-        { id: "2", name: "eska®clean 2250", consumption: 150 },
-        { id: "3", name: "eska®strip H 365A", consumption: 220 },
-        { id: "4", name: "eska®phos 2023", consumption: 160 },
-        { id: "5", name: "eska®phos 3045", consumption: 190 },
-      ]);
-    }
-  };
   
   // Pobierz dane przy pierwszym ładowaniu aplikacji
   useEffect(() => {
