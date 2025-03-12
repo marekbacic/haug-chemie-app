@@ -50,7 +50,6 @@ const fetchProducts = async () => {
       { id: "5", name: "eska®phos 3045", consumption: 190 },
     ]);
   }
-};
   
   // Pobierz dane przy pierwszym ładowaniu aplikacji
   useEffect(() => {
