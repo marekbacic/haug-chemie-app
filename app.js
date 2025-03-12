@@ -1146,7 +1146,7 @@ const HaugChemieApp = () => {
     // Pobierz raporty dla wybranego klienta
     const fetchReports = async (clientId) => {
       try {
-        const snapshot = await reportsCollection
+        const let snapshot = await reportsCollection
           .where("clientId", "==", clientId)
           .orderBy("date", "desc")
           .get();
