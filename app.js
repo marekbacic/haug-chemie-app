@@ -31,16 +31,27 @@ const HaugChemieApp = () => {
   }, []);
   
   // Pobierz produkty z Firebase
-  const fetchProducts = async () => {
-    try {
-      const snapshot = await productsCollection.get();
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setProducts(data);
-    } catch (error) {
-      console.error("Błąd podczas pobierania danych:", error);
+const fetchReports = async (clientId) => {
+  try {
+    // Usuń lub zakomentuj niepotrzebny blok
+    // const snapshot = await reportsCollection
+    //   .orderBy("date", "desc")
+    //   .get
+
+    const snapshot = await reportsCollection
+      .where("clientId", "==", clientId)
+      .orderBy("date", "desc")
+      .get();
+    
+    const reportsData = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    setReports(reportsData);
+  } catch (error) {
+    console.error("Błąd podczas pobierania raportów:", error);
+  }
+};
       // Jeśli nie można pobrać danych, użyj domyślnych
       setProducts([
         { id: "1", name: "eska®clean 1001", consumption: 180 },
