@@ -1018,5 +1018,18 @@ return (
   );
 };
 
-// Renderuj aplikację w kontenerze root
-ReactDOM.render(<HaugChemieApp />, document.getElementById('root'));
+// Dodaj obsługę błędów przy renderowaniu
+try {
+  console.log("Próba renderowania aplikacji...");
+  ReactDOM.render(<HaugChemieApp />, document.getElementById('root'));
+  console.log("Aplikacja wyrenderowana pomyślnie!");
+} catch (error) {
+  console.error("Błąd podczas renderowania aplikacji:", error);
+  document.getElementById('root').innerHTML = `
+    <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 5px; margin: 20px;">
+      <h2>Wystąpił błąd podczas ładowania aplikacji</h2>
+      <p>${error.message}</p>
+      <p>Sprawdź konsolę przeglądarki, aby uzyskać więcej informacji.</p>
+    </div>
+  `;
+}
