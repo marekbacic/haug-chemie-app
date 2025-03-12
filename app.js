@@ -1878,5 +1878,45 @@ const HaugChemieApp = () => {
   );
 };
 
-// Renderuj aplikację w kontenerze root
-ReactDOM.render(<HaugChemieApp />, document.getElementById('root'));
+// Dodaj ten kod przed renderowaniem aplikacji
+// Inicjalizacja domyślnych danych
+const initializeApp = async () => {
+  try {
+    // Sprawdź czy są produkty
+    const productsSnapshot = await db.collection("products").get();
+    if (productsSnapshot.empty) {
+      // Dodaj domyślne produkty
+      const defaultProducts = [
+        { name: "eska®clean 1001", consumption: 180 },
+        { name: "eska®clean 2250", consumption: 150 },
+        { name: "eska®strip H 365A", consumption: 220 },
+        { name: "eska®phos 2023", consumption: 160 },
+        { name: "eska®phos 3045", consumption: 190 }
+      ];
+      
+      for (const product of defaultProducts) {
+        await db.collection("products").add(product);
+      }
+      console.log("Dodano domyślne produkty");
+    }
+    
+    // Sprawdź czy jest konto administratora
+    const adminSnapshot = await db.collection("users").where("role", "==", "admin").get();
+    if (adminSnapshot.empty) {
+      await db.collection("users").add({
+        name: "Administrator",
+        email: "admin@haugchemie.com",
+        password: "admin123",
+        role: "admin",
+        createdAt: new Date()
+      });
+      console.log("Utworzono domyślne konto administratora");
+    }
+  } catch (error) {
+    console.error("Błąd inicjalizacji:", error);
+  }
+};
+
+initializeApp().then(() => {
+  ReactDOM.render(<HaugChemieApp />, document.getElementById('root'));
+});
