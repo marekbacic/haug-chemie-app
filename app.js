@@ -3,17 +3,32 @@ const { useState, useEffect } = React;
 
 // Główny komponent aplikacji
 const HaugChemieApp = () => {
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('chemicalConsumption');
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
-  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [loginCredentials, setLoginCredentials] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
   
   // Referencje do kolekcji w Firebase
   const productsCollection = db.collection("products");
+  const usersCollection = db.collection("users");
+  const clientsCollection = db.collection("clients");
+  const reportsCollection = db.collection("reports");
   
   // Stan dla produktów
   const [products, setProducts] = useState([]);
+  
+  // Sprawdzenie czy użytkownik jest zalogowany przy starcie
+  useEffect(() => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('currentUser');
+      }
+    }
+  }, []);
   
   // Pobierz produkty z Firebase
   const fetchProducts = async () => {
@@ -40,7 +55,82 @@ const HaugChemieApp = () => {
   // Pobierz dane przy pierwszym ładowaniu aplikacji
   useEffect(() => {
     fetchProducts();
+    
+    // Inicjalizacja konta administratora, jeśli nie istnieje
+    const initializeAdmin = async () => {
+      try {
+        const adminSnapshot = await usersCollection
+          .where("role", "==", "admin")
+          .limit(1)
+          .get();
+        
+        if (adminSnapshot.empty) {
+          await usersCollection.add({
+            name: "Administrator",
+            email: "admin@haugchemie.com",
+            password: "admin123", // W rzeczywistej aplikacji używaj hashowania haseł
+            role: "admin",
+            createdAt: new Date()
+          });
+          console.log("Utworzono domyślne konto administratora");
+        }
+      } catch (error) {
+        console.error("Błąd podczas inicjalizacji administratora:", error);
+      }
+    };
+    
+    initializeAdmin();
   }, []);
+  
+  // Funkcja logowania
+  const handleLogin = async () => {
+    setLoginError('');
+    
+    if (!loginCredentials.email || !loginCredentials.password) {
+      setLoginError('Wprowadź email i hasło');
+      return;
+    }
+    
+    try {
+      const userSnapshot = await usersCollection
+        .where("email", "==", loginCredentials.email)
+        .where("password", "==", loginCredentials.password)
+        .limit(1)
+        .get();
+      
+      if (userSnapshot.empty) {
+        setLoginError('Nieprawidłowy email lub hasło');
+        return;
+      }
+      
+      const userData = {
+        id: userSnapshot.docs[0].id,
+        ...userSnapshot.docs[0].data()
+      };
+      
+      setCurrentUser(userData);
+      localStorage.setItem('currentUser', JSON.stringify(userData));
+      setLoginModalOpen(false);
+      setLoginCredentials({ email: '', password: '' });
+      
+      // Ustaw odpowiednią zakładkę w zależności od roli
+      if (userData.role === 'admin') {
+        setActiveTab('adminPanel');
+      } else if (userData.role === 'salesRep') {
+        setActiveTab('salesRepPanel');
+      }
+    } catch (error) {
+      console.error("Błąd podczas logowania:", error);
+      setLoginError('Wystąpił błąd podczas logowania');
+    }
+  };
+  
+  // Funkcja wylogowania
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('currentUser');
+    setActiveTab('chemicalConsumption');
+  };
   
   // Baza danych chłodziw
   const coolantDatabase = [
@@ -324,18 +414,6 @@ const HaugChemieApp = () => {
       }
     }
   ];
-  
-  // Logowanie do panelu administratora
-  const handleAdminLogin = () => {
-    if (adminPassword === '12345') {
-      setIsAdmin(true);
-      setShowLoginModal(false);
-      setLoginError('');
-      setActiveTab('admin');
-    } else {
-      setLoginError('Nieprawidłowe hasło');
-    }
-  };
 
   // Panel administracyjny - zarządzanie produktami
   const ProductManagement = () => {
@@ -707,7 +785,7 @@ const HaugChemieApp = () => {
     
     return (
       <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold mb-4">Uzupełnianie stężenia chemii</h2>
+      <h2 className="text-2xl font-bold mb-4">Uzupełnianie stężenia chemii</h2>
         <p className="mb-4 text-gray-600">
           Oblicz ilość produktu, którą należy dodać do kąpieli, aby uzyskać wymagane stężenie.
         </p>
@@ -1030,36 +1108,651 @@ const HaugChemieApp = () => {
     );
   };
 
-  // Login Modal Component
+  // Panel handlowca
+  const SalesRepPanel = () => {
+    const [clients, setClients] = useState([]);
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [reports, setReports] = useState([]);
+    const [newReport, setNewReport] = useState({
+      date: new Date().toISOString().split('T')[0],
+      zones: Array(7).fill().map(() => ({
+        product: '',
+        concentration: '',
+        conductivity: '',
+        temperature: '',
+        ph: ''
+      }))
+    });
+    const [showAddClientModal, setShowAddClientModal] = useState(false);
+    const [newClientName, setNewClientName] = useState('');
+    
+    // Pobierz klientów danego handlowca
+    const fetchClients = async () => {
+      try {
+        const snapshot = await clientsCollection
+          .where("salesRepId", "==", currentUser.id)
+          .get();
+        
+        const clientsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setClients(clientsData);
+      } catch (error) {
+        console.error("Błąd podczas pobierania klientów:", error);
+      }
+    };
+    
+    // Pobierz raporty dla wybranego klienta
+    const fetchReports = async (clientId) => {
+      try {
+        const snapshot = await reportsCollection
+          .where("clientId", "==", clientId)
+          .orderBy("date", "desc")
+          .get();
+        
+        const reportsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setReports(reportsData);
+      } catch (error) {
+        console.error("Błąd podczas pobierania raportów:", error);
+      }
+    };
+    
+    // Dodaj nowego klienta
+    const addClient = async () => {
+      if (newClientName.trim() === '') return;
+      
+      try {
+        await clientsCollection.add({
+          name: newClientName,
+          salesRepId: currentUser.id,
+          createdAt: new Date()
+        });
+        
+        fetchClients();
+        setNewClientName('');
+        setShowAddClientModal(false);
+      } catch (error) {
+        console.error("Błąd podczas dodawania klienta:", error);
+      }
+    };
+    
+    // Dodaj nowy raport
+    const addReport = async () => {
+      if (!selectedClient) return;
+      
+      try {
+        await reportsCollection.add({
+          clientId: selectedClient.id,
+          salesRepId: currentUser.id,
+          date: newReport.date,
+          zones: newReport.zones,
+          createdAt: new Date()
+        });
+        
+        fetchReports(selectedClient.id);
+        setNewReport({
+          date: new Date().toISOString().split('T')[0],
+          zones: Array(7).fill().map(() => ({
+            product: '',
+            concentration: '',
+            conductivity: '',
+            temperature: '',
+            ph: ''
+          }))
+        });
+      } catch (error) {
+        console.error("Błąd podczas dodawania raportu:", error);
+      }
+    };
+    
+    // Aktualizuj dane strefy w nowym raporcie
+    const updateZoneData = (index, field, value) => {
+      const updatedZones = [...newReport.zones];
+      updatedZones[index] = {
+        ...updatedZones[index],
+        [field]: value
+      };
+      setNewReport({
+        ...newReport,
+        zones: updatedZones
+      });
+    };
+    
+    // Efekt przy pierwszym ładowaniu
+    useEffect(() => {
+      fetchClients();
+    }, []);
+    
+    // Efekt przy zmianie wybranego klienta
+    useEffect(() => {
+      if (selectedClient) {
+        fetchReports(selectedClient.id);
+      }
+    }, [selectedClient]);
+    
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-bold mb-4">Panel Handlowca</h2>
+        
+        <div className="flex flex-col md:flex-row md:space-x-6">
+          <div className="w-full md:w-1/3 mb-6 md:mb-0">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-medium">Klienci</h3>
+              <button
+                className="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
+                onClick={() => setShowAddClientModal(true)}
+              >
+                Dodaj klienta
+              </button>
+            </div>
+            <div className="bg-gray-50 p-3 rounded border max-h-96 overflow-y-auto">
+              {clients.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">Brak klientów</p>
+              ) : (
+                clients.map(client => (
+                  <div 
+                    key={client.id}
+                    className={`p-2 mb-1 rounded cursor-pointer ${selectedClient?.id === client.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                    onClick={() => setSelectedClient(client)}
+                  >
+                    {client.name}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          
+          <div className="w-full md:w-2/3">
+            {selectedClient ? (
+              <>
+                <h3 className="text-lg font-medium mb-4">Raporty - {selectedClient.name}</h3>
+                
+                <div className="mb-6 p-4 border rounded-md bg-gray-50">
+                  <h4 className="text-md font-medium mb-3">Nowy Raport</h4>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Data wizyty</label>
+                    <input
+                      type="date"
+                      className="w-full p-2 border rounded"
+                      value={newReport.date}
+                      onChange={(e) => setNewReport({...newReport, date: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="mb-3">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Parametry stref</h5>
+                    {newReport.zones.map((zone, index) => (
+                      <div key={index} className="mb-4 p-3 bg-white rounded shadow-sm">
+                        <h6 className="font-medium mb-2">Strefa {index + 1}</h6>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-600">Produkt</label>
+                            <select
+                              className="w-full p-1 border rounded text-sm"
+                              value={zone.product}
+                              onChange={(e) => updateZoneData(index, 'product', e.target.value)}
+                            >
+                              <option value="">Wybierz produkt</option>
+                              <option value="woda_sieciowa">Woda sieciowa</option>
+                              <option value="woda_demi">Woda DEMI</option>
+                              {products.map(product => (
+                                <option key={product.id} value={product.name}>{product.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-600">Stężenie (%)</label>
+                            <input
+                              type="number"
+                              className="w-full p-1 border rounded text-sm"
+                              value={zone.concentration}
+                              onChange={(e) => updateZoneData(index, 'concentration', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-600">Przewodność (μS/cm)</label>
+                            <input
+                              type="number"
+                              className="w-full p-1 border rounded text-sm"
+                              value={zone.conductivity}
+                              onChange={(e) => updateZoneData(index, 'conductivity', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-600">Temperatura (°C)</label>
+                            <input
+                              type="number"
+                              className="w-full p-1 border rounded text-sm"
+                              value={zone.temperature}
+                              onChange={(e) => updateZoneData(index, 'temperature', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-600">pH</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              className="w-full p-1 border rounded text-sm"
+                              value={zone.ph}
+                              onChange={(e) => updateZoneData(index, 'ph', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <button
+                      className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded"
+                      onClick={addReport}
+                    >
+                      Zapisz raport
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <h4 className="text-md font-medium mb-3">Historia raportów</h4>
+                  {reports.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">Brak historii raportów</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {reports.map(report => (
+                        <div key={report.id} className="p-4 border rounded-md">
+                          <div className="flex justify-between items-center mb-2">
+                            <h5 className="font-medium">Raport z dnia {new Date(report.date).toLocaleDateString()}</h5>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full bg-white">
+                              <thead>
+                                <tr className="bg-gray-100">
+                                  <th className="py-2 px-3 border-b text-left text-xs">Strefa</th>
+                                  <th className="py-2 px-3 border-b text-left text-xs">Produkt</th>
+                                  <th className="py-2 px-3 border-b text-center text-xs">Stężenie (%)</th>
+                                  <th className="py-2 px-3 border-b text-center text-xs">Przewodność</th>
+                                  <th className="py-2 px-3 border-b text-center text-xs">Temperatura</th>
+                                  <th className="py-2 px-3 border-b text-center text-xs">pH</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {report.zones.map((zone, index) => (
+                                  <tr key={index} className="hover:bg-gray-50">
+                                    <td className="py-2 px-3 border-b">{index + 1}</td>
+                                    <td className="py-2 px-3 border-b">{zone.product || '-'}</td>
+                                    <td className="py-2 px-3 border-b text-center">{zone.concentration || '-'}</td>
+                                    <td className="py-2 px-3 border-b text-center">{zone.conductivity || '-'}</td>
+                                    <td className="py-2 px-3 border-b text-center">{zone.temperature || '-'}</td>
+                                    <td className="py-2 px-3 border-b text-center">{zone.ph || '-'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-gray-500">Wybierz klienta z listy, aby wyświetlić raporty</p>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Modal dodawania klienta */}
+        {showAddClientModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h2 className="text-xl font-bold mb-4">Dodaj nowego klienta</h2>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nazwa firmy</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  placeholder="Wprowadź nazwę firmy"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded"
+                  onClick={() => setShowAddClientModal(false)}
+                >
+                  Anuluj
+                </button>
+                <button
+                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
+                  onClick={addClient}
+                >
+                  Dodaj
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Panel administratora do zarządzania handlowcami i przeglądania raportów
+  const AdminPanel = () => {
+    const [salesReps, setSalesReps] = useState([]);
+    const [clients, setClients] = useState([]);
+    const [reports, setReports] = useState([]);
+    const [selectedSalesRep, setSelectedSalesRep] = useState(null);
+    const [selectedClient, setSelectedClient] = useState(null);
+    const [showAddUserModal, setShowAddUserModal] = useState(false);
+    const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'salesRep' });
+
+    // Pobierz handlowców
+    const fetchSalesReps = async () => {
+      try {
+        const snapshot = await usersCollection
+          .where("role", "==", "salesRep")
+          .get();
+        
+        const salesRepsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setSalesReps(salesRepsData);
+      } catch (error) {
+        console.error("Błąd podczas pobierania handlowców:", error);
+      }
+    };
+    
+    // Pobierz klientów danego handlowca
+    const fetchClients = async (salesRepId) => {
+      try {
+        const snapshot = await clientsCollection
+          .where("salesRepId", "==", salesRepId)
+          .get();
+        
+        const clientsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setClients(clientsData);
+        setSelectedClient(null);
+        setReports([]);
+      } catch (error) {
+        console.error("Błąd podczas pobierania klientów:", error);
+      }
+    };
+    
+    // Pobierz raporty dla wybranego klienta
+    const fetchReports = async (clientId) => {
+      try {
+        const snapshot = await reportsCollection
+          .where("clientId", "==", clientId)
+          .orderBy("date", "desc")
+          .get
+        const snapshot = await reportsCollection
+          .where("clientId", "==", clientId)
+          .orderBy("date", "desc")
+          .get();
+        
+        const reportsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setReports(reportsData);
+      } catch (error) {
+        console.error("Błąd podczas pobierania raportów:", error);
+      }
+    };
+    
+    // Dodaj nowego handlowca
+    const addSalesRep = async () => {
+      if (newUser.name.trim() === '' || newUser.email.trim() === '' || newUser.password.trim() === '') {
+        return;
+      }
+      
+      try {
+        // W rzeczywistym systemie hasło powinno być hashowane i nie przechowywane bezpośrednio
+        await usersCollection.add({
+          name: newUser.name,
+          email: newUser.email,
+          password: newUser.password,
+          role: "salesRep",
+          createdAt: new Date()
+        });
+        
+        fetchSalesReps();
+        setNewUser({ name: '', email: '', password: '', role: 'salesRep' });
+        setShowAddUserModal(false);
+      } catch (error) {
+        console.error("Błąd podczas dodawania handlowca:", error);
+      }
+    };
+    
+    // Efekt przy pierwszym ładowaniu
+    useEffect(() => {
+      fetchSalesReps();
+    }, []);
+    
+    // Efekty przy zmianie wybranego handlowca i klienta
+    useEffect(() => {
+      if (selectedSalesRep) {
+        fetchClients(selectedSalesRep.id);
+      }
+    }, [selectedSalesRep]);
+    
+    useEffect(() => {
+      if (selectedClient) {
+        fetchReports(selectedClient.id);
+      }
+    }, [selectedClient]);
+    
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-bold mb-4">Panel Administratora</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-medium">Handlowcy</h3>
+              <button
+                className="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded text-sm"
+                onClick={() => setShowAddUserModal(true)}
+              >
+                Dodaj handlowca
+              </button>
+            </div>
+            <div className="bg-gray-50 p-3 rounded border max-h-96 overflow-y-auto">
+              {salesReps.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">Brak handlowców</p>
+              ) : (
+                salesReps.map(salesRep => (
+                  <div 
+                    key={salesRep.id}
+                    className={`p-2 mb-1 rounded cursor-pointer ${selectedSalesRep?.id === salesRep.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                    onClick={() => setSelectedSalesRep(salesRep)}
+                  >
+                    {salesRep.name}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          
+          <div>
+            <h3 className="text-lg font-medium mb-2">Klienci</h3>
+            <div className="bg-gray-50 p-3 rounded border max-h-96 overflow-y-auto">
+              {!selectedSalesRep ? (
+                <p className="text-gray-500 text-center py-4">Wybierz handlowca</p>
+              ) : clients.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">Brak klientów</p>
+              ) : (
+                clients.map(client => (
+                  <div 
+                    key={client.id}
+                    className={`p-2 mb-1 rounded cursor-pointer ${selectedClient?.id === client.id ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                    onClick={() => setSelectedClient(client)}
+                  >
+                    {client.name}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          
+          <div>
+            <h3 className="text-lg font-medium mb-2">Raporty</h3>
+            <div className="bg-gray-50 p-3 rounded border max-h-96 overflow-y-auto">
+              {!selectedClient ? (
+                <p className="text-gray-500 text-center py-4">Wybierz klienta</p>
+              ) : reports.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">Brak raportów</p>
+              ) : (
+                reports.map(report => (
+                  <div key={report.id} className="p-3 mb-2 bg-white rounded shadow-sm">
+                    <h4 className="font-medium mb-2">Raport z dnia {new Date(report.date).toLocaleDateString()}</h4>
+                    {report.zones.some(zone => zone.product) ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                          <thead>
+                            <tr className="bg-gray-100">
+                              <th className="py-1 px-2 text-xs text-left">Strefa</th>
+                              <th className="py-1 px-2 text-xs text-left">Produkt</th>
+                              <th className="py-1 px-2 text-xs text-center">Stęż. (%)</th>
+                              <th className="py-1 px-2 text-xs text-center">Przew.</th>
+                              <th className="py-1 px-2 text-xs text-center">Temp.</th>
+                              <th className="py-1 px-2 text-xs text-center">pH</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {report.zones.filter(zone => zone.product).map((zone, index) => (
+                              <tr key={index} className="border-b">
+                                <td className="py-1 px-2 text-xs">{index + 1}</td>
+                                <td className="py-1 px-2 text-xs">{zone.product}</td>
+                                <td className="py-1 px-2 text-xs text-center">{zone.concentration || '-'}</td>
+                                <td className="py-1 px-2 text-xs text-center">{zone.conductivity || '-'}</td>
+                                <td className="py-1 px-2 text-xs text-center">{zone.temperature || '-'}</td>
+                                <td className="py-1 px-2 text-xs text-center">{zone.ph || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-sm">Brak danych o strefach</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Modal dodawania handlowca */}
+        {showAddUserModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h2 className="text-xl font-bold mb-4">Dodaj nowego handlowca</h2>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Imię i nazwisko</label>
+                  <input
+                    type="text"
+                    className="w-full p-2 border rounded"
+                    value={newUser.name}
+                    onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                    placeholder="Wprowadź imię i nazwisko"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    className="w-full p-2 border rounded"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                    placeholder="Wprowadź adres email"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+                  <input
+                    type="password"
+                    className="w-full p-2 border rounded"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                    placeholder="Wprowadź hasło"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded"
+                  onClick={() => setShowAddUserModal(false)}
+                >
+                  Anuluj
+                </button>
+                <button
+                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
+                  onClick={addSalesRep}
+                >
+                  Dodaj
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Modal logowania
   const LoginModal = () => {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-full max-w-md">
-          <h2 className="text-xl font-bold mb-4">Panel administratora</h2>
-          <p className="mb-4">Wprowadź hasło, aby uzyskać dostęp do panelu administracyjnego</p>
-          
-          <input
-            type="password"
-            className="w-full p-2 border rounded mb-4"
-            value={adminPassword}
-            onChange={(e) => setAdminPassword(e.target.value)}
-            placeholder="Hasło administratora"
-          />
-          
+          <h2 className="text-xl font-bold mb-4">Logowanie</h2>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                className="w-full p-2 border rounded"
+                value={loginCredentials.email}
+                onChange={(e) => setLoginCredentials({...loginCredentials, email: e.target.value})}
+                placeholder="Wprowadź adres email"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+              <input
+                type="password"
+                className="w-full p-2 border rounded"
+                value={loginCredentials.password}
+                onChange={(e) => setLoginCredentials({...loginCredentials, password: e.target.value})}
+                placeholder="Wprowadź hasło"
+              />
+            </div>
+          </div>
           {loginError && (
-            <p className="text-red-500 mb-4">{loginError}</p>
+            <p className="text-red-500 mt-2">{loginError}</p>
           )}
-          
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-4">
             <button
               className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded"
-              onClick={() => setShowLoginModal(false)}
+              onClick={() => setLoginModalOpen(false)}
             >
               Anuluj
             </button>
             <button
               className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
-              onClick={handleAdminLogin}
+              onClick={handleLogin}
             >
               Zaloguj
             </button>
@@ -1076,32 +1769,27 @@ const HaugChemieApp = () => {
       <header className="bg-white shadow-md">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <img 
-            src="data:image/png;base64,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"
+            src="/api/placeholder/400/150"
             alt="Haug Chemie Logo"
             className="h-16 object-contain"
           />
-          <div>
-            {isAdmin ? (
-              <div className="flex space-x-4">
-                <button
-                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
-                  onClick={() => setActiveTab('admin')}
-                >
-                  Zarządzaj produktami
-                </button>
+          <div className="flex items-center space-x-4">
+            {currentUser ? (
+              <div className="flex items-center space-x-4">
+                <span className="text-gray-700">{currentUser.name} ({currentUser.role === 'admin' ? 'Administrator' : 'Handlowiec'})</span>
                 <button
                   className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded"
-                  onClick={() => setIsAdmin(false)}
+                  onClick={handleLogout}
                 >
                   Wyloguj
                 </button>
               </div>
             ) : (
               <button
-                className="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded"
-                onClick={() => setShowLoginModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded"
+                onClick={() => setLoginModalOpen(true)}
               >
-                Panel administratora
+                Zaloguj
               </button>
             )}
           </div>
@@ -1111,7 +1799,8 @@ const HaugChemieApp = () => {
       {/* Navigation tabs */}
       <div className="container mx-auto px-4 py-6">
         <div className="flex flex-wrap -mx-2 mb-6">
-          <div className="px-2 w-full md:w-1/4 mb-4 md:mb-0">
+          {/* Zawsze widoczne zakładki */}
+          <div className="px-2 w-full md:w-1/5 mb-4 md:mb-0">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'chemicalConsumption' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('chemicalConsumption')}
@@ -1119,7 +1808,7 @@ const HaugChemieApp = () => {
               Kalkulator zużycia chemii
             </button>
           </div>
-          <div className="px-2 w-full md:w-1/4 mb-4 md:mb-0">
+          <div className="px-2 w-full md:w-1/5 mb-4 md:mb-0">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'volumeCalculator' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('volumeCalculator')}
@@ -1127,7 +1816,7 @@ const HaugChemieApp = () => {
               Kalkulator objętości
             </button>
           </div>
-          <div className="px-2 w-full md:w-1/4 mb-4 md:mb-0">
+          <div className="px-2 w-full md:w-1/5 mb-4 md:mb-0">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'concentrationCalculator' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('concentrationCalculator')}
@@ -1135,7 +1824,7 @@ const HaugChemieApp = () => {
               Uzupełnianie stężenia
             </button>
           </div>
-          <div className="px-2 w-full md:w-1/4">
+          <div className="px-2 w-full md:w-1/5 mb-4 md:mb-0">
             <button
               className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'chlodziwaSelektor' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
               onClick={() => setActiveTab('chlodziwaSelektor')}
@@ -1143,6 +1832,32 @@ const HaugChemieApp = () => {
               Dopasuj chłodziwo
             </button>
           </div>
+          
+          {/* Zakładki dostępne po zalogowaniu */}
+          {currentUser && (
+            <>
+              {currentUser.role === 'admin' && (
+                <div className="px-2 w-full md:w-1/5">
+                  <button
+                    className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'adminPanel' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
+                    onClick={() => setActiveTab('adminPanel')}
+                  >
+                    Panel Administratora
+                  </button>
+                </div>
+              )}
+              {currentUser.role === 'salesRep' && (
+                <div className="px-2 w-full md:w-1/5">
+                  <button
+                    className={`w-full py-3 px-4 rounded-t-lg ${activeTab === 'salesRepPanel' ? 'bg-white text-blue-600 font-bold shadow-md' : 'bg-gray-200 hover:bg-gray-300'}`}
+                    onClick={() => setActiveTab('salesRepPanel')}
+                  >
+                    Panel Handlowca
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
         
         {/* Content area */}
@@ -1151,12 +1866,14 @@ const HaugChemieApp = () => {
           {activeTab === 'volumeCalculator' && <VolumeCalculator />}
           {activeTab === 'concentrationCalculator' && <ConcentrationCalculator />}
           {activeTab === 'chlodziwaSelektor' && <CoolantSelector />}
-          {activeTab === 'admin' && <ProductManagement />}
+          {activeTab === 'adminPanel' && currentUser?.role === 'admin' && <AdminPanel />}
+          {activeTab === 'salesRepPanel' && currentUser?.role === 'salesRep' && <SalesRepPanel />}
+          {activeTab === 'productManagement' && currentUser?.role === 'admin' && <ProductManagement />}
         </div>
       </div>
       
-      {/* Login Modal */}
-      {showLoginModal && <LoginModal />}
+      {/* Modals */}
+      {loginModalOpen && <LoginModal />}
     </div>
   );
 };
