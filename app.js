@@ -1145,7 +1145,7 @@ const fetchProducts = async () => {
     // Pobierz raporty dla wybranego klienta
     const fetchReports = async (clientId) => {
       try {
-        const let snapshot = await reportsCollection
+        const snapshot = await reportsCollection
           .where("clientId", "==", clientId)
           .orderBy("date", "desc")
           .get();
