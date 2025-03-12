@@ -5,23 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Haug Chemie - Aplikacja</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Dodaj informację diagnostyczną -->
+  <script>
+    console.log("Index.html załadowany");
+  </script>
+  
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  
+  <!-- React -->
+  <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
 </head>
 <body class="bg-gray-100">
-  <div id="root"></div>
+  <div id="root">
+    <!-- Fallback content -->
+    <div style="padding: 20px; text-align: center;">
+      Ładowanie aplikacji Haug Chemie...
+      <p>Jeśli ta wiadomość nie znika, sprawdź konsolę przeglądarki.</p>
+    </div>
+  </div>
   
   <!-- Konfiguracja Firebase -->
   <script src="firebase-config.js"></script>
   
-  <!-- React i ReactDOM -->
-  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-  
-  <!-- Babel -->
-  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-  
-  <!-- Główny skrypt aplikacji -->
-  <script src="app.js" type="text/babel"></script>
+  <!-- Skrypt aplikacji -->
+  <script type="text/babel" src="app.js"></script>
 </body>
 </html>
